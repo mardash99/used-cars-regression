@@ -1,0 +1,500 @@
+---
+title: "Project STA9750, Group 12"
+output: word_document
+date: "2025-05-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(regclass)
+library(ggplot2)
+```
+
+DATA LOADING & EXPLORATION
+```{r data loading}
+vehiclesraw <- read.csv('vehiclesraw.csv')
+nrow(vehiclesraw)
+```
+
+CHECKING FOR MISSING VALUES FOR SELECTED COLUMNS
+```{r missing values handling}
+vehiclesraw[vehiclesraw == ""] <- NA #convert no value variables not captured as NAN/NA
+missingcounts <- colSums(is.na(vehiclesraw)) #counting missing values
+data.frame(missingcounts) #FrequencyCounts
+```
+
+SELECTED VARIABLES
+The variable of interest is price. Given the relevance and the share of missing values, the predictors of interest are: year, manufacturer, fuel, odometer, and transmission.
+```{r variable selection}
+vechiclesselected <- vehiclesraw[,c("price", "odometer", "year", "model", "manufacturer", "fuel", "transmission")]
+```
+
+REMOVAL OF VALUES NA AND IMPOSSIBLE VALUES
+Since the data is scraped from the net, there are irrelevant rows which don't have any data, and there are rows which serve as only placeholders. We ended up removing approximately 19% of the dataset, which is to be expected due to how this data was collected. 
+```{r impossible values handling}
+vechilescomplete <-vechiclesselected[complete.cases(vechiclesselected),]
+vehiclesvalid<-vechilescomplete[-which(vechilescomplete$price<=500 | vechilescomplete$odometer<=500 | vechilescomplete$year<=1985 |  is.na(vechilescomplete$manufacturer)),]
+round(nrow(vehiclesvalid)/nrow(vehiclesraw),3) #Remaining portion of the original dataset
+```
+
+OUTLIER HANDLING
+We removed extreme outliers from the price and odometer columns. We were left with 97.6% of the valid dataset. Which means that only about 2.4% of all valid rows were outliers either by price or by millage. 
+```{r outlier handling}
+vechileswithoutlier <- vehiclesvalid #To Preserve 
+
+#PRICE OUTLIER HANDLING (Using 1.5 IQR)
+Q1 <- quantile(vechileswithoutlier$price, 0.25)
+Q3 <- quantile(vechileswithoutlier$price, 0.75)
+IQR_value <- IQR(vechileswithoutlier$price)
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+vechilesNOoutliers1 <- vechileswithoutlier[vechileswithoutlier$price >= lower_bound & vechileswithoutlier$price <= upper_bound, ]
+
+round(nrow(vechilesNOoutliers1)/nrow(vehiclesvalid),3) #after removing outliers by price
+
+#ODOMETER (AND PRICE) OUTLIER HANDLING 
+Q1 <- quantile(vechilesNOoutliers1$odometer, 0.25)
+Q3 <- quantile(vechilesNOoutliers1$odometer, 0.75)
+IQR_value <- IQR(vechilesNOoutliers1$odometer)
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+vechilesNOoutliers2 <- vechilesNOoutliers1[vechilesNOoutliers1$odometer >= lower_bound & vechilesNOoutliers1$odometer <= upper_bound, ]
+
+round(nrow(vechilesNOoutliers2)/nrow(vehiclesvalid),3) #after removing outliers by odometer
+```
+
+RECODING YEARS AND MANUFACTURER
+Instead of the year, Age is added. The Manufacturer column allowed us to generate two new columns: Country (of Origin) and Continent (of Origin).
+```{r recoding and reclassifying variables}
+#RECODING YEARS TO AGE
+vechilesNOoutliers2[,"age"] <- (2023-vechilesNOoutliers2$year)
+
+#CREATING VARIABLES OF COUNTRY AND CONTINENT
+manufacturer_country <- c(
+  'ford' = 'United States',
+  'chevrolet' = 'United States',
+  'toyota' = 'Japan',
+  'honda' = 'Japan',
+  'nissan' = 'Japan',
+  'jeep' = 'United States',
+  'gmc' = 'United States',
+  'ram' = 'United States',
+  'dodge' = 'United States',
+  'bmw' = 'Germany',
+  'mercedes-benz' = 'Germany',
+  'subaru' = 'Japan',
+  'hyundai' = 'South Korea',
+  'volkswagen' = 'Germany',
+  'lexus' = 'Japan',
+  'kia' = 'South Korea',
+  'chrysler' = 'United States',
+  'cadillac' = 'United States',
+  'buick' = 'United States',
+  'infiniti' = 'Japan',
+  'mazda' = 'Japan',
+  'audi' = 'Germany',
+  'acura' = 'Japan',
+  'lincoln' = 'United States',
+  'pontiac' = 'United States',
+  'mitsubishi' = 'Japan',
+  'volvo' = 'Sweden',
+  'mini' = 'United Kingdom',
+  'rover' = 'United Kingdom',
+  'mercury' = 'United States',
+  'saturn' = 'United States',
+  'jaguar' = 'United Kingdom',
+  'porsche' = 'Germany',
+  'fiat' = 'Italy',
+  'alfa-romeo' = 'Italy',
+  'tesla' = 'United States',
+  'harley-davidson' = 'United States',
+  'ferrari' = 'Italy',
+  'datsun' = 'Japan',
+  'land rover' = 'United Kingdom',
+  'aston-martin' = 'United Kingdom',
+  'morgan' = 'United Kingdom'
+)
+
+manufacturer_continent <- c(
+  'ford' = 'North America',
+  'chevrolet' = 'North America',
+  'toyota' = 'Asia',
+  'honda' = 'Asia',
+  'nissan' = 'Asia',
+  'jeep' = 'North America',
+  'gmc' = 'North America',
+  'ram' = 'North America',
+  'dodge' = 'North America',
+  'bmw' = 'Europe',
+  'mercedes-benz' = 'Europe',
+  'subaru' = 'Asia',
+  'hyundai' = 'Asia',
+  'volkswagen' = 'Europe',
+  'lexus' = 'Asia',
+  'kia' = 'Asia',
+  'chrysler' = 'North America',
+  'cadillac' = 'North America',
+  'buick' = 'North America',
+  'infiniti' = 'Asia',
+  'mazda' = 'Asia',
+  'audi' = 'Europe',
+  'acura' = 'Asia',
+  'lincoln' = 'North America',
+  'pontiac' = 'North America',
+  'mitsubishi' = 'Asia',
+  'volvo' = 'Europe',
+  'mini' = 'Europe',
+  'rover' = 'Europe',
+  'mercury' = 'North America',
+  'saturn' = 'North America',
+  'jaguar' = 'Europe',
+  'porsche' = 'Europe',
+  'fiat' = 'Europe',
+  'alfa-romeo' = 'Europe',
+  'tesla' = 'North America',
+  'harley-davidson' = 'North America',
+  'ferrari' = 'Europe',
+  'datsun' = 'Asia',
+  'land rover' = 'Europe',
+  'aston-martin' = 'Europe',
+  'morgan' = 'Europe'
+)
+
+#NewColumnsCreation
+vechilesNOoutliers2$country <- manufacturer_country[vechilesNOoutliers2$manufacturer]
+vechilesNOoutliers2$continent <- manufacturer_continent[vechilesNOoutliers2$manufacturer]
+```
+
+CLEAN DATA
+This dataset is ready for analytics, but we need to update data types. The total number of rows is 338,104. 
+```{r data type updating}
+vehicles <- vechilesNOoutliers2[,c("price", "odometer", "age", "fuel", "transmission", "manufacturer", "country", "continent")]
+
+#CONVERTING STRINGS TO FACTORS
+vehicles$fuel <- as.factor(vehicles$fuel)
+vehicles$transmission <- as.factor(vehicles$transmission)
+vehicles$manufacturer <- as.factor(vehicles$manufacturer)
+vehicles$country <- as.factor(vehicles$country)
+vehicles$continent <- as.factor(vehicles$continent)
+
+rownames(vehicles) <- NULL #ResetIndex
+nrow(vehicles)
+```
+
+BASE DATASET
+Base Dataset is named vehicles. 
+Let's examine it's structure and the distributions for each of the quantitative variables. 
+```{r base data examination}
+head(vehicles)
+hist(vehicles$price)
+hist(vehicles$odometer)
+hist(vehicles$age)
+```
+
+VISUALIZATION ANALYSIS
+In the visualization, heteroscedasticity shows, transforming y (price) to log shows more visual linear scatterplot, hence it will be applied to the data going forward. 
+Furthermore, inspecting among logs of Y versus log versions of odometer and age still yields best results when log is only applied to Y retaining Xs as its original form
+```{r visualizations}
+#Ordinary Running
+plot(price~odometer, data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "Price vs Odometer")
+
+#LogY Running
+plot(log(price)~odometer, data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "LogPrice vs Odometer")
+
+#LogY Running
+plot(log(price)~log(odometer), data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "LogPrice vs LogOdometer")
+
+#Ordinary Running
+plot(price~age, data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "Price vs Age")
+
+#LogY Running
+plot(log(price)~age, data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "LogPrice vs Age")
+
+#LogY Running
+plot(log(price)~log(age), data=vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "LogPrice vs LogAge")
+
+
+```
+
+ASSOCIATION ANALYSIS
+In this association analysis, we have five variables to be subjected to association analysis:
+- Price and Odometer: Quant to Quant
+- Price and Age: Quant to Quant
+- Price and Transmission: Quant to Categorical
+- Price and Fuel: Quant to Categorical
+- Price and Country: Quant to Categorical
+
+Price and Odometer: Quant to Quant
+Log-price and odometer have a Spearman ranked correlation correlation of -0.6458253 (estimated p-value is 0), and the range of p-values is 0 to 0.007 which is conclusive. Pearson linear correlation is -0.6014164 (estimated p-value is also 0). Association analysis confirms statistical significance. 
+```{r AssocPrOdo}
+#QQ: PRICE & ODOMETER
+#Adding a log-transformed age column and a log-transformed price column to the dataset
+vehicles$log_age <- log(vehicles$age)
+vehicles$log_price <- log(vehicles$price)
+
+#Examining the correlations
+all_correlations(vehicles, interest = "log_price", type = "pearson", sorted = "magnitude")
+all_correlations(vehicles, interest = "log_price", type = "spearman", sorted = "magnitude")
+
+#associate(log(price)~odometer, data=vehicles)
+```
+
+Price and Age: Quant to Quant
+For Spearman Correlation, log price and age of vehicles has also negative correlation of -0.6345000 (p-values=0), and range of p values from between 0 and 0.007 which make it significant and conclusive. This generally follows the older the car the lower (log price) it can command.
+```{r AssocPrAge}
+#QQ PRICE & AGE
+#associate(log_price~age, data=vehicles)
+```
+
+Price and Fuel: Quant to Categorical
+Using medians, there is a significant differences (D=22407) among fuel types. The type of fuel used by the car also affects the price of the car conclusively (estimated p-value  is 0 and the 95% range is 0 to 0.007).
+```{r AssocPrFuel}
+#QQ PRICE & FUEL
+associate(log_price~fuel, data=vehicles)
+1-pf(22407, df1=5-1, df2=338104-4)
+```
+
+Price and Transmission: Quant to Categorical
+Using medians, there is a significant differences (D=53323) among transmission types with automatic fuel (median=9.473) having a higher price command among manual (median=9.21 ). The type of transmission used by the car also affects the price of the car conclusively (p values=0 and in not inbetween 0 and 0.007).
+```{r AssocPrTrans}
+#QQ PRICE & TRANSMISSION
+associate(log_price~transmission, data=vehicles)
+1-pf(53323, df1=3-1, df2=338104-2) #Can you confirm the D value as my R did not show discrepancy when i did a rerun
+```
+
+Price and Country: Quant to Categorical
+Country of manufacturer origin also seem to have significant association (p=0;) in price. European cars lead the median values, followed by American cars, while Asian Cars not lagging behind that much.
+```{r AssocPrCon}
+#QQ PRICE & COUNTRY
+associate(log_price~country, data=vehicles)
+1-pf(7400, df1=7-1, df2=338104-6) 
+```
+
+REGRESSION ANALYSIS
+PRICE & MILLAGE
+Both models analyze how car price declines with mileage (odometer), but the second model (with log-transformed price) fits the data better. In the first model, the price drops linearly by about $0.123 per mile, and mileage explains ~35% of the variation in price (R-squared = 0.3494). However, the residuals are heteroscedastic—variance increases with mileage—which violates regression assumptions. The second model log-transforms price, which makes the relationship more linear and stabilizes variance. Here, each additional mile reduces the log(price) by about 0.0000085, which corresponds to a percentage drop rather than a fixed dollar amount. The fit improves slightly (R-squared = 0.3617), and residuals appear more evenly spread. This makes the log-linear model more statistically appropriate for predicting price declines across a wide range of values. We also observe surprisingly narrow 95% confidence intervals for both coefficients in both models. 
+```{r slrPA}
+#Scatter Plot and Simple Linear Regression
+plot(price ~ odometer, data = vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "Price vs Millage")
+model_odometer <- lm(price ~ odometer, data = sampled)
+abline(model_odometer, col = "red", lwd = 2)
+summary(model_odometer)
+confint(model_odometer, level=0.95)
+
+#Log X Version
+plot(log_price ~ odometer, data = vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "Log(Price) vs Millage")
+log_model_odometer <- lm(log(price) ~ odometer, data = sampled)
+abline(log_model_odometer, col = "blue", lwd = 2)
+summary(log_model_odometer)
+
+#Regression Coefficients
+confint(model_odometer, level=0.95)
+confint(log_model_odometer, level=0.95)
+```
+
+PRICE & AGE
+Both models confirm a strong, statistically significant negative relationship between car age and price. In the linear model (price ~ age), each additional year of age reduces price by approximately $1,278. The model explains ~36.5% of the variance in price (R-squared = 0.3649), but the residuals are heteroscedastic — price variation increases with age, violating linear model assumptions. The log-linear model (log(price) ~ age) addresses this issue by stabilizing variance and improving model fit (R-squared = 0.4026). In this version, each additional year reduces the log of price by ~0.0909, translating to an approximate 8.7% price drop per year. This model captures the exponential depreciation pattern more realistically and is statistically superior in both explanatory power and assumption validity.
+```{r slrPO,}
+#Scatter Plot and Simple Linear Regression
+plot(price ~ age, data = vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "Price vs Age")
+model_age <- lm(price ~ age, data = sampled)
+abline(model_age, col = "red", lwd = 2)
+summary(model_age)
+
+#Log X Version
+plot(log_price ~ age, data = vehicles, pch = 16,  cex = 0.4, col = rgb(0, 0, 0, 0.1), main = "log(Price) vs Age")
+log_model_age <- lm(log(price) ~ age, data = sampled)
+abline(log_model_age, col = "blue", lwd = 2)
+summary(log_model_age)
+
+#Regression Coefficients
+confint(model_age, level=0.95)
+confint(log_model_age, level=0.95)
+```
+
+PRICE & FUEL
+The boxplot and regression model show how vehicle price (log-transformed) varies by fuel type. The reference group is diesel, with a mean log(price) ≈ 10.12. Compared to diesel: electric cars are significantly cheaper on average, with a log(price) ≈ 0.18 lower, implying about a 16.8% lower price. Gas and hybrid cars are much cheaper, with log(price) ≈ 0.67 lower than diesel, meaning they’re priced about 48% lower. Other fuel types show no statistically significant difference in price compared to diesel (p-value = 0.192). Though all differences (except "other") are highly statistically significant (p-values < 2e-16), the model has a low R-squared (≈ 6.9%), meaning fuel type alone explains little of the variance in log(price). This suggests fuel type affects price but is far from the main driver. 
+```{r slrPF}
+#Box Plot
+library(ggplot2)
+ggplot(vehicles, aes(x = fuel, y = log_price)) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "red") +
+  geom_boxplot(alpha = 0.4) +
+  labs(title = "Log(Price) by Fuel Type with Mean Overlay")
+#associate(price~fuel,data=sampled) -> takes forever to compute
+
+#Simple Linear Regression
+model_fuel <- lm(log_price ~ fuel, data = vehicles)
+summary(model_fuel)
+#Regression Coefficients
+confint(model_fuel, level=0.95)
+```
+
+PRICE & TRANSMISSION
+The model and boxplot reveal that transmission type significantly affects log-transformed vehicle prices. The reference group is automatic, with an average log(price) ≈ 9.41. Manual transmission vehicles have a log(price) lower by ~0.242, meaning they are about 21.5% cheaper on average than automatic ones. Other transmission types have a log(price) higher by ~0.785, translating to about a 119% higher price. All coefficients are statistically significant (p-values < 2e-16), and the R-squared = 0.1291 indicates that transmission explains about 13% of the variance in log(price) — much stronger than fuel type. Visually, the “other” category shows much higher prices, possibly representing premium or rare vehicles. The model suggests that transmission type has a meaningful, nonlinear impact on price.
+```{r slrPT}
+#Box Plot
+library(ggplot2)
+ggplot(vehicles, aes(x = transmission, y = log_price)) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "red") +
+  geom_boxplot(alpha = 0.4) +
+  labs(title = "Log(Price) by Transmission Type with Mean Overlay")
+
+#Simple Linear Regression
+model_transmission <- lm(log_price ~ transmission, data = vehicles)
+summary(model_transmission)
+#Regression Coefficients
+confint(model_transmission, level=0.95)
+```
+
+PRICE & MANUFACTURER
+The plot and regression output show how log-transformed vehicle prices vary by manufacturer, using Acura as the reference group. Most manufacturers have statistically significantly different average prices compared to the reference. High-end brands like Tesla (+0.645), Alfa Romeo (+0.536), Porsche (+0.32), and Ram (+0.35) show significantly higher log-prices, translating to 90%–190% higher prices compared to Acura. Low-end brands like Saturn (-1.38), Mercury (-1.43), and Pontiac (-1.26) show massively lower prices (around 70–75% lower). Several luxury brands like Mercedes-Benz, BMW, and Lexus are not significantly different from the reference group (p-values > 0.05), suggesting comparable pricing in log terms. Some mid-tier brands like Toyota (-0.27), Ford (-0.13), and Chevrolet (-0.18) are moderately lower in price. Adjusted R-squared is 0.1, meaning manufacturer explains 10% of the variance in log price. That’s higher than fuel type (6.9%) but still low, implying that other features (age, mileage) have more predictive power over log-price. There are statistically significant differences in price by manufacturer. However, brand alone isn’t enough to explain most of the variation — other variables matter more.
+```{r slrPMan}
+#Box Plot
+ggplot(vehicles, aes(x = reorder(manufacturer, price, FUN = mean), y = log_price)) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "red") +
+  geom_boxplot(alpha = 0.4) +
+  labs(title = "Price by Manufacturer with Mean Overlay", x = "Manufacturer", y = "Price") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#associate(price~fuel,data=sampled) -> takes forever to compute
+
+#Simple Linear Regression
+model_manufacturer <- lm(log_price ~ manufacturer, data = vehicles)
+summary(model_manufacturer)
+```
+
+PRICE & COUNTRY
+The boxplot and regression results show that country of origin has a statistically significant but weak effect on vehicle prices (log-transformed). The reference group is Germany, with an average log(price) of 9.68. Italy and the UK have significantly higher prices than Germany. Japan, South Korea, Sweden, and the United States all have significantly lower average prices. Adjusted R-squared = 0.0217, meaning country explains only ~2.2% of the variance in log(price). While all coefficients (except the intercept) are significant (p < 0.001), the practical influence of country is small compared to variables like age, mileage, or manufacturer. Country of origin has statistically meaningful effects on price, but it's a weak predictor in isolation. Vehicles from Italy and the UK tend to be more expensive (likely due to high-end brands), while those from Asia and the U.S. are generally cheaper.
+```{r slrPCon}
+#Box Plot
+library(ggplot2)
+ggplot(vehicles, aes(x = country, y = log_price)) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "red") +
+  geom_boxplot(alpha = 0.4) +
+  labs(title = "Price by Country with Mean Overlay")
+
+#Simple Linear Regression
+model_country <- lm(log_price ~ country, data = vehicles)
+summary(model_country)
+#Regression Coefficients
+confint(model_country, level=0.95)
+```
+
+MODEL DEVELOPMENT: BASELINE MODEL
+A multiple linear regression model was fitted to predict vehicle price using both odometer and age as predictors. The results show that both variables are highly statistically significant (p < 2e-16). Specifically, each additional mile driven decreases the vehicle's price by approximately 7.2 cents, holding age constant. Similarly, each additional year of age reduces the price by about 810 dollars, controlling for mileage. The intercept of the model is around 33,990 dollars, representing the estimated price of a brand-new car with zero mileage. The model explains about 43.7% of the variation in vehicle prices (Adjusted R-squared = 0.437), which is a considerable improvement over models using only one predictor. The residual standard error is approximately $9,405, indicating the typical deviation between observed and predicted prices. Overall, both age and mileage contribute meaningfully to vehicle depreciation.
+```{r MLR1Numerics}
+model_baseline <- lm(price ~ odometer+age, data=vehicles)
+summary(model_baseline)
+```
+
+FULL MODEL
+Three multiple linear regression models were fit to predict vehicle price using odometer, age, fuel type, transmission, and either manufacturer, country, or continent as an additional categorical predictor. The full model including manufacturer achieved the highest explanatory power, with an R-squared of 0.6138, indicating it explains about 61.4% of the variation in price. The country-based model performed slightly worse (Adjusted R-squared = 0.5606), and the continent-based model had the lowest fit (Adjusted R-squared = 0.5508), though all models remain statistically highly significant (p < 2.2e-16). Across all models, odometer and age remained strongly and negatively associated with price, confirming their robust impact on vehicle depreciation. Fuel type and transmission type also consistently showed significant effects. Manufacturer-level detail adds the most predictive power, highlighting that brand-specific differences capture more variance in pricing. 
+```{r MLR2Country}
+model_full_manu <- lm(price ~ odometer+age+fuel+transmission+manufacturer, data=vehicles)
+summary(model_full_manu)
+
+model_full_country <- lm(price ~ odometer+age+fuel+transmission+country, data=vehicles)
+summary(model_full_country)
+
+model_full_continent <- lm(price ~ odometer+age+fuel+transmission+continent, data=vehicles)
+summary(model_full_continent)
+```
+LOG MODEL
+Two linear regression models were fitted to predict the log-transformed vehicle price. The first model used only odometer and age as predictors, achieving an R-squared of 0.4684, indicating that these two factors explain approximately 46.8% of the variation in log(price). The second model included additional categorical variables: fuel type, transmission, and manufacturer. This expanded model improved the fit substantially, with an Adjusted R-squared of 0.5912 and a lower residual standard error (0.542 vs. 0.618), indicating better prediction. In both models, higher mileage and older age significantly reduce vehicle value. The full model also revealed that fuel type, transmission, and brand contribute significantly to price differences. For example, electric vehicles had significantly lower log prices than the baseline group, and luxury manufacturers like Porsche and Tesla showed strong positive effects on price, while brands like Saturn and Mercury were associated with large negative price adjustments. Overall, including categorical vehicle attributes meaningfully improves predictive power when modeling vehicle prices.
+```{r MLR1LogNumerics}
+logmodel_baseline <- lm(log_price ~ odometer+age, data=vehicles)
+summary(logmodel_baseline)
+
+logmodel_full_manu <- lm(log_price ~ odometer+age+fuel+transmission+manufacturer, data=vehicles)
+summary(logmodel_full_manu)
+```
+
+LOG MODEL DIAGNOSTICS
+Residual diagnostics for the multiple linear regression model predicting log(price) indicate some deviation from ideal model assumptions. The residuals vs. fitted plot shows a clear funnel shape, where variance decreases as fitted values increase. This pattern suggests heteroscedasticity — a violation of the constant variance assumption — which may affect the efficiency of coefficient estimates. Additionally, the Q-Q plot shows notable departures from the theoretical normal line, especially in the tails. This indicates that the residuals are not normally distributed and that the model likely has heavy tails and outliers. Despite these issues, the model explains a substantial portion of the variance (Adjusted R-squared ≈ 0.59), and violations may be tolerable in large samples. However, for more accurate inference, robust standard errors or alternative models (e.g., quantile regression or regularization) may be considered.
+```{r MLR2Conti}
+plot(logmodel_full_manu, which = 1)
+plot(logmodel_full_manu, which = 2)
+```
+
+PREDICTION FULL MODEL
+``` {r Prediction}
+predict_price <- function(odometer, age, fuel, transmission, manufacturer) {
+  
+  intercept <- 11.42
+  
+  fuel_effects <- c(
+    electric = -1.011, gas = -0.7672, hybrid = -0.9737, other = -0.6573, diesel = 0
+  )
+  
+  transmission_effects <- c(
+    manual = 0.09351, other = 0.1471, automatic = 0
+  )
+  
+  manufacturer_effects <- c(
+    `alfa-romeo` = 0.006349, 
+    `aston-martin` = -0.1031, 
+    audi = 0.1071, 
+    bmw = 0.1006,
+    buick = -0.2601, 
+    cadillac = 0.05037, 
+    chevrolet = 0.09707, 
+    chrysler = -0.3701,
+    dodge = -0.1660, 
+    ferrari = -0.7160, 
+    fiat = -0.5848, 
+    ford = 0.1112, 
+    gmc = 0.3005,
+    `harley-davidson` = -0.04205, 
+    honda = -0.1867, 
+    hyundai = -0.3992, 
+    infiniti = 0.05739,
+    jaguar = 0.07463, 
+    jeep = 0.1249, 
+    kia = -0.4294, 
+    `land rover` = 0.3121,
+    lexus = 0.2658, 
+    lincoln = -0.003167, 
+    mazda = -0.3014, 
+    `mercedes-benz` = 0.1815,
+    mercury = -0.5014, 
+    mini = -0.2875, 
+    mitsubishi = -0.3952, 
+    nissan = -0.2781,
+    pontiac = -0.3828, 
+    porsche = 0.6556, 
+    ram = 0.2910, 
+    rover = 0.2634,
+    saturn = -0.6011, 
+    subaru = -0.1607, 
+    tesla = 0.4941, 
+    toyota = 0.1128,
+    volkswagen = -0.3839, 
+    volvo = -0.1343, 
+    acura = 0  # base level
+  )
+  
+  #LogPrice
+  log_price <- intercept +
+    odometer * -4.754e-06 +
+    age * -0.05915 +
+    fuel_effects[[fuel]] +
+    transmission_effects[[transmission]] +
+    manufacturer_effects[[manufacturer]]
+  
+  #Estimate
+  price <- exp(log_price)
+
+  return(list(
+    predicted_price = price
+  ))
+}
+```
+
+```{r Usage}
+predicted_price <- predict_price(odometer = 70000, age = 10, fuel = "gas", transmission = "automatic", manufacturer = "kia") 
+predicted_price
+```
+
+
+
+
